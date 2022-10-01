@@ -11,7 +11,7 @@ stages:
   - job: 'Build'
     displayName: 'Build job'
     pool:
-      name: 'MyAgentPool'
+      name: 'demovm3'
       demands:
       - npm
 

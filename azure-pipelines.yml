@@ -1,9 +1,7 @@
 trigger:
 - '*'
-
 variables:
   buildConfiguration: 'Release'
-
 stages:
 - stage: 'Build'
   displayName: 'Build the web application'
@@ -14,45 +12,36 @@ stages:
       name: 'MyAgentPool'
       demands:
       - npm
-
     variables:
       wwwrootDir: 'Tailspin.SpaceGame.Web/wwwroot'
       dotnetSdkVersion: '6.x'
-
     steps:
     - task: UseDotNet@2
       displayName: 'Use .NET SDK $(dotnetSdkVersion)'
       inputs:
         version: '$(dotnetSdkVersion)'
-
     - task: Npm@1
       displayName: 'Run npm install'
       inputs:
         verbose: false
-
     - script: './node_modules/.bin/node-sass $(wwwrootDir) --output $(wwwrootDir)'
       displayName: 'Compile Sass assets'
-
     - task: gulp@1
       displayName: 'Run gulp tasks'
-
     - script: 'echo "$(Build.DefinitionName), $(Build.BuildId), $(Build.BuildNumber)" > buildinfo.txt'
       displayName: 'Write build info'
       workingDirectory: $(wwwrootDir)
-
     - task: DotNetCoreCLI@2
       displayName: 'Restore project dependencies'
       inputs:
         command: 'restore'
         projects: '**/*.csproj'
-
     - task: DotNetCoreCLI@2
       displayName: 'Build the project - $(buildConfiguration)'
       inputs:
         command: 'build'
         arguments: '--no-restore --configuration $(buildConfiguration)'
         projects: '**/*.csproj'
-
     - task: DotNetCoreCLI@2
       displayName: 'Publish the project - $(buildConfiguration)'
       inputs:
@@ -61,29 +50,43 @@ stages:
         publishWebProjects: false
         arguments: '--no-build --configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)/$(buildConfiguration)'
         zipAfterPublish: true
-
     - publish: '$(Build.ArtifactStagingDirectory)'
       artifact: drop
-
 - stage: 'Deploy'
   displayName: 'Deploy the web application'
   dependsOn: Build
   jobs:
-  - deployment: Deploy
-    pool:
-      name: 'MyAgentPool'
-    environment: dev
-    variables:
-    - group: Release
-    strategy:
-      runOnce:
-        deploy:
+    - deployment: VMDeploy
+      displayName: web
+      environment:
+       name: smarthotel-dev
+       resourceType: VirtualMachine
+      strategy:
+       rolling:
+        maxParallel: 5  #for percentages, mention as x%
+        preDeploy:
           steps:
           - download: current
             artifact: drop
-          - task: AzureWebApp@1
-            displayName: 'Azure App Service Deploy: website'
-            inputs:
+          - script: echo initialize, cleanup, backup, install certs
+        deploy:
+         steps:
+         - task: AzureWebApp@1
+           displayName: 'Azure App Service Deploy: website'
+           inputs:
               azureSubscription: 'Resource Manager - Tailspin - Space Game'
-              appName: '$(WebAppName)'
+              appName: 'tailspin-space-game-dev01'
               package: '$(Pipeline.Workspace)/drop/$(buildConfiguration)/*.zip'
+        routeTraffic:
+         steps:
+         - script: echo routing traffic
+        postRouteTraffic:
+          steps:
+          - script: echo health check post-route traffic
+        on:
+          failure:
+           steps:
+           - script: echo Restore from backup! This is on failure
+          success:
+            steps:
+            - script: echo Notify! This is on success
